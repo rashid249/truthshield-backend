@@ -1,56 +1,52 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+import requests
 
-from utils.schema import (
-    TextRequest,
-    TextAnalysisResponse,
-    ImageRequest,
-    ImageAnalysisResponse,
-)
-from models.text_analyzer import TextBiasAnalyzer
-from models.image_analyzer import ImageAnalyzer
+app = FastAPI()
 
-app = FastAPI(title="TruthShield Backend")
+# -----------------------------
+# HuggingFace API Config
+# -----------------------------
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],   # for dev; tighten later
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+HF_API_KEY = ""  # Optional: put your HF API Key here
+HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
 
-text_analyzer = TextBiasAnalyzer()
-image_analyzer = ImageAnalyzer()
+TEXT_MODEL_URL = "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-sentiment-latest"
+IMAGE_MODEL_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224"
 
+
+# -----------------------------
+# Root check
+# -----------------------------
 
 @app.get("/")
-async def root():
-    return {"status": "TruthShield backend running"}
+def root():
+    return {"status": "TruthShield backend running (HF Powered)"}
 
 
-@app.post("/analyze_text", response_model=TextAnalysisResponse)
-async def analyze_text(req: TextRequest):
-    result = text_analyzer.analyze(req.text)
-    return TextAnalysisResponse(**result)
+# -----------------------------
+# TEXT ANALYSIS
+# -----------------------------
+
+@app.post("/analyze_text")
+async def analyze_text(payload: dict):
+    text = payload.get("text", "")
+
+    if not text:
+        return {"error": "Text is required"}
+
+    response = requests.post(TEXT_MODEL_URL, headers=HEADERS, json={"inputs": text})
+    
+    return {"input": text, "result": response.json()}
 
 
-@app.post("/analyze_image", response_model=ImageAnalysisResponse)
-async def analyze_image(req: ImageRequest):
-    result = image_analyzer.analyze_url(req.url)
-    return ImageAnalysisResponse(
-        ai_score=result.ai_score,
-        label=result.label,
-        details=result.details,
-    )
+# -----------------------------
+# IMAGE ANALYSIS
+# -----------------------------
 
+@app.post("/analyze_image")
+async def analyze_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
 
-@app.post("/analyze_image_file", response_model=ImageAnalysisResponse)
-async def analyze_image_file(file: UploadFile = File(...)):
-    data = await file.read()
-    result = image_analyzer.analyze_bytes(data)
-    return ImageAnalysisResponse(
-        ai_score=result.ai_score,
-        label=result.label,
-        details=result.details,
-    )
+    response = requests.post(IMAGE_MODEL_URL, headers=HEADERS, data=image_bytes)
+
+    return {"filename": file.filename, "result": response.json()}
