@@ -7,14 +7,14 @@ ENV HF_HOME=/tmp/hf
 
 WORKDIR /app
 
-# Install minimal system deps
-RUN apt-get update && apt-get install -y \
-    git \
+RUN apt-get update && apt-get install -y git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt
 
 COPY . .
 
