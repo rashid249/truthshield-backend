@@ -1,52 +1,87 @@
 from fastapi import FastAPI, UploadFile, File
+from pydantic import BaseModel
 import requests
+import base64
 
 app = FastAPI()
 
 # -----------------------------
-# HuggingFace API Config
+# HuggingFace API Helper
 # -----------------------------
 
-HF_API_KEY = ""  # Optional: put your HF API Key here
-HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
+HF_API_KEY = "YOUR_HF_API_KEY"   # ← Replace with your token
 
-TEXT_MODEL_URL = "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-sentiment-latest"
-IMAGE_MODEL_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224"
+HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
+def hf_text_inference(model_id, text):
+    response = requests.post(
+        f"https://api-inference.huggingface.co/models/{model_id}",
+        headers=HEADERS,
+        json={"inputs": text},
+    )
+    return response.json()
+
+def hf_image_inference(model_id, image_bytes):
+    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    response = requests.post(
+        f"https://api-inference.huggingface.co/models/{model_id}",
+        headers=HEADERS,
+        json={"inputs": img_base64},
+    )
+    return response.json()
 
 # -----------------------------
-# Root check
+# Text Input Schema
+# -----------------------------
+
+class TextRequest(BaseModel):
+    text: str
+
+# -----------------------------
+# ROUTES
 # -----------------------------
 
 @app.get("/")
 def root():
-    return {"status": "TruthShield backend running (HF Powered)"}
-
-
-# -----------------------------
-# TEXT ANALYSIS
-# -----------------------------
+    return {"status": "TruthShield backend (HuggingFace version) running"}
 
 @app.post("/analyze_text")
-async def analyze_text(payload: dict):
-    text = payload.get("text", "")
+def analyze_text(data: TextRequest):
+    text = data.text
 
-    if not text:
-        return {"error": "Text is required"}
+    sentiment = hf_text_inference(
+        "cardiffnlp/twitter-roberta-base-sentiment-latest", text
+    )
 
-    response = requests.post(TEXT_MODEL_URL, headers=HEADERS, json={"inputs": text})
-    
-    return {"input": text, "result": response.json()}
+    hate_speech = hf_text_inference(
+        "Hate-speech-CNERG/dehatebert-mono", text
+    )
 
+    toxicity = hf_text_inference(
+        "facebook/roberta-hate-speech-dynabench-r4-target", text
+    )
 
-# -----------------------------
-# IMAGE ANALYSIS
-# -----------------------------
+    return {
+        "sentiment": sentiment,
+        "hate_speech": hate_speech,
+        "toxicity": toxicity
+    }
+
 
 @app.post("/analyze_image")
 async def analyze_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
 
-    response = requests.post(IMAGE_MODEL_URL, headers=HEADERS, data=image_bytes)
+    nsfw = hf_image_inference(
+        "falconsai/nsfw_image_detection", image_bytes
+    )
 
-    return {"filename": file.filename, "result": response.json()}
+    objects = hf_image_inference(
+        "facebook/detr-resnet-50", image_bytes
+    )
+
+    return {
+        "nsfw": nsfw,
+        "objects": objects
+    }
