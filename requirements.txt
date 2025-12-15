@@ -1,9 +1,9 @@
 fastapi
 uvicorn
 transformers
-torch==2.2.2
+torch
 pydantic
-numpy<2.0
+numpy
 requests
 Pillow
 python-multipart

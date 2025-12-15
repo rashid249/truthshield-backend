@@ -1,53 +1,31 @@
-# ----------------------------
-# Base image (lightweight)
-# ----------------------------
 FROM python:3.10-slim
 
-# ----------------------------
-# Environment variables
-# ----------------------------
+# Prevent Python from writing .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# ----------------------------
-# Working directory
-# ----------------------------
 WORKDIR /app
 
-# ----------------------------
 # System dependencies
-# ----------------------------
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ----------------------------
-# Copy requirements first (cache-friendly)
-# ----------------------------
+# Copy requirements
 COPY requirements.txt .
 
-# ----------------------------
-# Install Python dependencies
-# IMPORTANT: Use PyTorch CPU index
-# ----------------------------
+# 🔥 CORRECT pip install (THIS FIXES EVERYTHING)
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
     -r requirements.txt
 
-# ----------------------------
-# Copy application code
-# ----------------------------
+# Copy app code
 COPY . .
 
-# ----------------------------
 # Expose FastAPI port
-# ----------------------------
 EXPOSE 8000
 
-# ----------------------------
-# Start FastAPI app
-# ----------------------------
+# Run app
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
