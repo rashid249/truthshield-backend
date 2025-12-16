@@ -5,14 +5,14 @@ import base64
 import os
 import requests
 
-app = FastAPI(title="TruthShield Backend")
+app = FastAPI()
 
 # -----------------------------
 # CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Allow Chrome extension & any frontend
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,7 +22,7 @@ app.add_middleware(
 # HuggingFace Router API
 # -----------------------------
 HF_API_URL = "https://router.huggingface.co/inference"
-HF_API_KEY = os.getenv("HF_API_KEY")   # Optional
+HF_API_KEY = os.getenv("HF_API_KEY")
 
 
 def make_headers():
@@ -38,7 +38,7 @@ def make_headers():
 def hf_text_inference(model: str, text: str):
     payload = {
         "model": model,
-        "text": text
+        "inputs": text   # <-- FIXED HERE
     }
 
     response = requests.post(
@@ -58,7 +58,7 @@ def hf_image_inference(model: str, image_bytes: bytes):
 
     payload = {
         "model": model,
-        "image": img_b64
+        "inputs": img_b64   # <-- FIXED HERE
     }
 
     response = requests.post(
@@ -108,9 +108,6 @@ async def analyze_image(file: UploadFile = File(...)):
     }
 
 
-# -----------------------------
-# ROOT
-# -----------------------------
 @app.get("/")
 def root():
     return {"status": "TruthShield HF Router running"}
