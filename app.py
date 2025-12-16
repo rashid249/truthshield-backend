@@ -7,9 +7,7 @@ import requests
 
 app = FastAPI()
 
-# -----------------------------
 # CORS
-# -----------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,12 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -----------------------------
-# HuggingFace Router API
-# -----------------------------
+# HF Router API
 HF_API_URL = "https://router.huggingface.co/inference"
 HF_API_KEY = os.getenv("HF_API_KEY")
-
 
 def make_headers():
     headers = {"Content-Type": "application/json"}
@@ -32,50 +27,55 @@ def make_headers():
     return headers
 
 
-# -----------------------------
-# TEXT INFERENCE
-# -----------------------------
+# SAFE JSON EXTRACTOR (prevents crashes)
+def safe_json(response):
+    try:
+        return response.json()
+    except:
+        return {
+            "error": "Non-JSON response from HF Router",
+            "status_code": response.status_code,
+            "text": response.text
+        }
+
+
+# TEXT inference (HF Router compatible)
 def hf_text_inference(model: str, text: str):
     payload = {
         "model": model,
-        "inputs": text   # <-- FIXED HERE
+        "inputs": [text]   # <-- FIX: HF Router requires list
     }
 
-    response = requests.post(
+    resp = requests.post(
         HF_API_URL,
         headers=make_headers(),
         json=payload
     )
 
-    return response.json()
+    return safe_json(resp)
 
 
-# -----------------------------
-# IMAGE INFERENCE
-# -----------------------------
+# IMAGE inference (HF Router compatible)
 def hf_image_inference(model: str, image_bytes: bytes):
     img_b64 = base64.b64encode(image_bytes).decode()
 
     payload = {
         "model": model,
-        "inputs": img_b64   # <-- FIXED HERE
+        "inputs": img_b64
     }
 
-    response = requests.post(
+    resp = requests.post(
         HF_API_URL,
         headers=make_headers(),
         json=payload
     )
 
-    return response.json()
+    return safe_json(resp)
 
 
-# -----------------------------
 # TEXT ROUTE
-# -----------------------------
 class TextRequest(BaseModel):
     text: str
-
 
 @app.post("/analyze/text")
 def analyze_text(req: TextRequest):
@@ -92,9 +92,7 @@ def analyze_text(req: TextRequest):
     }
 
 
-# -----------------------------
 # IMAGE ROUTE
-# -----------------------------
 @app.post("/analyze/image")
 async def analyze_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
@@ -102,10 +100,7 @@ async def analyze_image(file: UploadFile = File(...)):
     nsfw = hf_image_inference("falconsai/nsfw_image_detection", image_bytes)
     objects = hf_image_inference("facebook/detr-resnet-50", image_bytes)
 
-    return {
-        "nsfw": nsfw,
-        "objects": objects
-    }
+    return {"nsfw": nsfw, "objects": objects}
 
 
 @app.get("/")
