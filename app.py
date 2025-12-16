@@ -8,7 +8,7 @@ import os
 app = FastAPI()
 
 # -----------------------------
-# CORS (Important for Extension)
+# CORS (Chrome Extension Support)
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -19,18 +19,14 @@ app.add_middleware(
 )
 
 # -----------------------------
-# HuggingFace Router API
+# HuggingFace Router Endpoint
 # -----------------------------
-HF_API_KEY = os.getenv("HF_API_KEY", None)   # Optional
-
+HF_API_KEY = os.getenv("HF_API_KEY", None)   # optional
 HF_ROUTER_URL = "https://router.huggingface.co/inference"
 
 
 def make_headers():
-    """
-    Create headers dynamically.
-    If no API Key → run in public mode.
-    """
+    """HF API key is optional."""
     headers = {"Content-Type": "application/json"}
     if HF_API_KEY:
         headers["Authorization"] = f"Bearer {HF_API_KEY}"
@@ -41,12 +37,18 @@ def make_headers():
 # TEXT INFERENCE (Correct HF Router Format)
 # -----------------------------
 def hf_text_inference(model_id: str, text: str):
+    """
+    HuggingFace Router expects:
+    
+    {
+       "model": "model-name",
+       "inputs": "some text"
+    }
+    """
     try:
         payload = {
             "model": model_id,
-            "inputs": {
-                "text": text
-            }
+            "inputs": text
         }
 
         response = requests.post(
@@ -56,6 +58,7 @@ def hf_text_inference(model_id: str, text: str):
         )
 
         return response.json()
+
     except Exception as e:
         return {"error": str(e)}
 
@@ -64,14 +67,20 @@ def hf_text_inference(model_id: str, text: str):
 # IMAGE INFERENCE (Correct HF Router Format)
 # -----------------------------
 def hf_image_inference(model_id: str, image_bytes: bytes):
+    """
+    HF Router expects base64 string as inputs, not nested JSON.
+    
+    {
+       "model": "model-name",
+       "inputs": "<base64 string>"
+    }
+    """
     try:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         payload = {
             "model": model_id,
-            "inputs": {
-                "image": img_b64
-            }
+            "inputs": img_b64
         }
 
         response = requests.post(
@@ -86,19 +95,21 @@ def hf_image_inference(model_id: str, image_bytes: bytes):
         return {"error": str(e)}
 
 
-# Schema
+# -----------------------------
+# Request Schema
+# -----------------------------
 class TextRequest(BaseModel):
     text: str
 
 
 # -----------------------------
-# Root Route
+# Root Endpoint
 # -----------------------------
 @app.get("/")
 def root():
     return {
-        "status": "TruthShield backend running with HuggingFace Router API",
-        "api_key_loaded": HF_API_KEY is not None
+        "status": "TruthShield backend running (HF Router enabled)",
+        "hf_api_key_loaded": HF_API_KEY is not None
     }
 
 
