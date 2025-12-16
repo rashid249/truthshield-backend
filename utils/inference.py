@@ -1,3 +1,5 @@
+# backend/utils/inference.py
+
 import requests
 import base64
 import os
@@ -14,46 +16,43 @@ def make_headers():
 
 
 # -----------------------------
-# TEXT INFERENCE (Correct Router Format)
+# TEXT INFERENCE  (Router API)
 # -----------------------------
 def hf_text_inference(model_id: str, text: str):
     try:
         payload = {
             "model": model_id,
-            "inputs": text,          # ✔ FIXED (must be "inputs")
+            "text": text
         }
 
-        response = requests.post(
+        res = requests.post(
             HF_API_URL,
             headers=make_headers(),
-            json=payload,
-            timeout=30
+            json=payload
         )
 
-        return response.json()
+        return res.json()
     except Exception as e:
         return {"error": str(e)}
 
 
 # -----------------------------
-# IMAGE INFERENCE (Correct Router Format)
+# IMAGE INFERENCE  (Router API)
 # -----------------------------
 def hf_image_inference(model_id: str, image_bytes: bytes):
     try:
-        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        img_b64 = base64.b64encode(image_bytes).decode()
 
         payload = {
             "model": model_id,
-            "inputs": img_b64,       # ✔ FIXED (must be "inputs")
+            "image": img_b64
         }
 
-        response = requests.post(
+        res = requests.post(
             HF_API_URL,
             headers=make_headers(),
-            json=payload,
-            timeout=30
+            json=payload
         )
-
-        return response.json()
+        return res.json()
     except Exception as e:
         return {"error": str(e)}
