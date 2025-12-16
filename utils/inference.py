@@ -1,11 +1,9 @@
-# backend/utils/inference.py
-
 import requests
 import base64
 import os
 
 HF_API_KEY = os.getenv("HF_API_KEY", None)
-HF_API_URL = "https://router.huggingface.co/inference"
+HF_API_URL = "https://router.huggingface.co/inference"   # ✔ CORRECT
 
 
 def make_headers():
@@ -16,7 +14,7 @@ def make_headers():
 
 
 # -----------------------------
-# TEXT INFERENCE  (Router API)
+# TEXT INFERENCE (Router API)
 # -----------------------------
 def hf_text_inference(model_id: str, text: str):
     try:
@@ -25,19 +23,15 @@ def hf_text_inference(model_id: str, text: str):
             "text": text
         }
 
-        res = requests.post(
-            HF_API_URL,
-            headers=make_headers(),
-            json=payload
-        )
+        response = requests.post(HF_API_URL, headers=make_headers(), json=payload)
+        return response.json()
 
-        return res.json()
     except Exception as e:
         return {"error": str(e)}
 
 
 # -----------------------------
-# IMAGE INFERENCE  (Router API)
+# IMAGE INFERENCE (Router API)
 # -----------------------------
 def hf_image_inference(model_id: str, image_bytes: bytes):
     try:
@@ -48,11 +42,8 @@ def hf_image_inference(model_id: str, image_bytes: bytes):
             "image": img_b64
         }
 
-        res = requests.post(
-            HF_API_URL,
-            headers=make_headers(),
-            json=payload
-        )
-        return res.json()
+        response = requests.post(HF_API_URL, headers=make_headers(), json=payload)
+        return response.json()
+
     except Exception as e:
         return {"error": str(e)}
