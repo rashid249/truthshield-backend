@@ -3,80 +3,103 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import os
+import base64
 
 app = FastAPI()
 
 # -----------------------------
-# CORS (Important for Chrome/Edge Extensions)
+# CORS (Chrome/Edge Extensions)
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # you can restrict later
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -----------------------------
-# Environment Variables (Railway)
+# HuggingFace Router (New API)
 # -----------------------------
-HF_API_KEY = os.getenv("HF_API_KEY")   # Set this in Railway Variables
+HF_API_KEY = os.getenv("HF_API_KEY", None)   # optional
 
-if not HF_API_KEY:
-    raise ValueError("❌ HF_API_KEY is missing — Add it in Railway environment variables")
+HF_API_URL = "https://router.huggingface.co/inference"
 
-HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
+
+def make_headers():
+    """
+    Create headers dynamically.
+    API key is optional.
+    """
+    headers = {"Content-Type": "application/json"}
+    if HF_API_KEY:
+        headers["Authorization"] = f"Bearer {HF_API_KEY}"
+    return headers
 
 
 # -----------------------------
-# Text Inference Helper
+# Text Inference
 # -----------------------------
 def hf_text_inference(model_id: str, text: str):
     try:
-        res = requests.post(
-            f"https://api-inference.huggingface.co/models/{model_id}",
-            headers=HEADERS,
-            json={"inputs": text},
+        payload = {
+            "inputs": text,
+            "options": {"wait_for_model": True}
+        }
+
+        response = requests.post(
+            f"{HF_API_URL}/{model_id}",
+            headers=make_headers(),
+            json=payload
         )
-        return res.json()
+
+        return response.json()
     except Exception as e:
         return {"error": str(e)}
 
 
 # -----------------------------
-# Image Inference Helper (Correct format)
+# Image Inference (Router uses base64)
 # -----------------------------
 def hf_image_inference(model_id: str, image_bytes: bytes):
     try:
-        res = requests.post(
-            f"https://api-inference.huggingface.co/models/{model_id}",
-            headers=HEADERS,
-            files={"file": image_bytes},   # correct format for image models
+        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload = {
+            "inputs": img_b64,
+            "options": {"wait_for_model": True}
+        }
+
+        response = requests.post(
+            f"{HF_API_URL}/{model_id}",
+            headers=make_headers(),
+            json=payload
         )
-        return res.json()
+
+        return response.json()
     except Exception as e:
         return {"error": str(e)}
 
 
 # -----------------------------
-# Text Schema
+# Schema
 # -----------------------------
 class TextRequest(BaseModel):
     text: str
 
 
 # -----------------------------
-# ROUTES
+# ROOT
 # -----------------------------
-
 @app.get("/")
 def root():
-    return {"status": "TruthShield backend (HuggingFace version) running"}
+    return {
+        "status": "TruthShield backend running using HF Router (API key optional)"
+    }
 
 
 # -----------------------------
-# MATCHING FRONTEND ROUTE
-# POST /analyze/text
+# TEXT ANALYSIS ROUTE
 # -----------------------------
 @app.post("/analyze/text")
 def analyze_text(request: TextRequest):
@@ -102,8 +125,7 @@ def analyze_text(request: TextRequest):
 
 
 # -----------------------------
-# MATCHING FRONTEND ROUTE
-# POST /analyze/image
+# IMAGE ANALYSIS ROUTE
 # -----------------------------
 @app.post("/analyze/image")
 async def analyze_image(file: UploadFile = File(...)):
