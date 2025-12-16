@@ -14,19 +14,20 @@ def make_headers():
 
 
 # -----------------------------
-# TEXT INFERENCE (HF Router Format)
+# TEXT INFERENCE (Correct Router Format)
 # -----------------------------
 def hf_text_inference(model_id: str, text: str):
     try:
         payload = {
-            "text": text,                # <---- FIXED
             "model": model_id,
+            "inputs": text,          # ✔ FIXED (must be "inputs")
         }
 
         response = requests.post(
             HF_API_URL,
             headers=make_headers(),
-            json=payload
+            json=payload,
+            timeout=30
         )
 
         return response.json()
@@ -35,21 +36,22 @@ def hf_text_inference(model_id: str, text: str):
 
 
 # -----------------------------
-# IMAGE INFERENCE (HF Router Format)
+# IMAGE INFERENCE (Correct Router Format)
 # -----------------------------
 def hf_image_inference(model_id: str, image_bytes: bytes):
     try:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         payload = {
-            "image": img_b64,            # <---- FIXED
             "model": model_id,
+            "inputs": img_b64,       # ✔ FIXED (must be "inputs")
         }
 
         response = requests.post(
             HF_API_URL,
             headers=make_headers(),
-            json=payload
+            json=payload,
+            timeout=30
         )
 
         return response.json()
