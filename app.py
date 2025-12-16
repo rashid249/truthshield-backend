@@ -1,42 +1,69 @@
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 import requests
-import base64
+import os
 
 app = FastAPI()
 
 # -----------------------------
-# HuggingFace API Helper
+# CORS (Important for Chrome/Edge Extensions)
 # -----------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],       # you can restrict later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-HF_API_KEY = "YOUR_HF_API_KEY"   # ← Replace with your token
+# -----------------------------
+# Environment Variables (Railway)
+# -----------------------------
+HF_API_KEY = os.getenv("HF_API_KEY")   # Set this in Railway Variables
+
+if not HF_API_KEY:
+    raise ValueError("❌ HF_API_KEY is missing — Add it in Railway environment variables")
 
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
-def hf_text_inference(model_id, text):
-    response = requests.post(
-        f"https://api-inference.huggingface.co/models/{model_id}",
-        headers=HEADERS,
-        json={"inputs": text},
-    )
-    return response.json()
-
-def hf_image_inference(model_id, image_bytes):
-    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
-
-    response = requests.post(
-        f"https://api-inference.huggingface.co/models/{model_id}",
-        headers=HEADERS,
-        json={"inputs": img_base64},
-    )
-    return response.json()
 
 # -----------------------------
-# Text Input Schema
+# Text Inference Helper
 # -----------------------------
+def hf_text_inference(model_id: str, text: str):
+    try:
+        res = requests.post(
+            f"https://api-inference.huggingface.co/models/{model_id}",
+            headers=HEADERS,
+            json={"inputs": text},
+        )
+        return res.json()
+    except Exception as e:
+        return {"error": str(e)}
 
+
+# -----------------------------
+# Image Inference Helper (Correct format)
+# -----------------------------
+def hf_image_inference(model_id: str, image_bytes: bytes):
+    try:
+        res = requests.post(
+            f"https://api-inference.huggingface.co/models/{model_id}",
+            headers=HEADERS,
+            files={"file": image_bytes},   # correct format for image models
+        )
+        return res.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# -----------------------------
+# Text Schema
+# -----------------------------
 class TextRequest(BaseModel):
     text: str
+
 
 # -----------------------------
 # ROUTES
@@ -46,9 +73,14 @@ class TextRequest(BaseModel):
 def root():
     return {"status": "TruthShield backend (HuggingFace version) running"}
 
-@app.post("/analyze_text")
-def analyze_text(data: TextRequest):
-    text = data.text
+
+# -----------------------------
+# MATCHING FRONTEND ROUTE
+# POST /analyze/text
+# -----------------------------
+@app.post("/analyze/text")
+def analyze_text(request: TextRequest):
+    text = request.text
 
     sentiment = hf_text_inference(
         "cardiffnlp/twitter-roberta-base-sentiment-latest", text
@@ -69,7 +101,11 @@ def analyze_text(data: TextRequest):
     }
 
 
-@app.post("/analyze_image")
+# -----------------------------
+# MATCHING FRONTEND ROUTE
+# POST /analyze/image
+# -----------------------------
+@app.post("/analyze/image")
 async def analyze_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
 

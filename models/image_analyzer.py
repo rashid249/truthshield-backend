@@ -1,149 +1,96 @@
-# backend/models/image_analyzer.py
+@app.post("/analyze_image")
+async def analyze_image(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
 
-import io
-import os
-from dataclasses import dataclass
-from typing import Optional
-
-import requests
-from PIL import Image, ImageStat
-
-
-HF_API_KEY = os.getenv("HF_API_KEY")
-HF_API_URL = "https://api-inference.huggingface.co/models/omni-moderation-latest"  
-# This model returns: nsfw_score, fake_score, modification_score
-
-
-headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-
-
-@dataclass
-class ImageAnalysisResult:
-    ai_score: float
-    label: str
-    nsfw_score: Optional[float] = None
-    manipulation_score: Optional[float] = None
-    details: Optional[str] = None
-
-
-class ImageAnalyzer:
-
-    # --------------------------
-    # 1) HuggingFace Remote AI
-    # --------------------------
-    def _huggingface_analyze(self, image_bytes: bytes) -> Optional[dict]:
-        try:
-            response = requests.post(
-                HF_API_URL,
-                headers=headers,
-                data=image_bytes,
-                timeout=12
-            )
-
-            if response.status_code != 200:
-                return None
-
-            return response.json()
-
-        except Exception:
-            return None
-
-    # -------------------------
-    # 2) Local heuristic fallback
-    # -------------------------
-    def _heuristic_analyze(self, img: Image.Image, has_exif: bool) -> ImageAnalysisResult:
-        img = img.convert("RGB")
-        small = img.resize((128, 128))
-        stat = ImageStat.Stat(small)
-
-        stdevs = stat.stddev
-        avg_stdev = sum(stdevs) / len(stdevs)
-        smoothness_suspicion = max(0.0, min(1.0, 80.0 / (avg_stdev + 1e-5)))
-
-        ai_score = 0.5
-        details = []
-
-        if has_exif:
-            ai_score -= 0.2
-            details.append("Has EXIF (more like a real camera image)")
-        else:
-            ai_score += 0.15
-            details.append("No EXIF (may be AI-generated or edited)")
-
-        ai_score += 0.15 * smoothness_suspicion
-        details.append(f"smoothness={smoothness_suspicion:.2f}")
-
-        ai_score = float(max(0.0, min(1.0, ai_score)))
-
-        if ai_score < 0.35:
-            label = "likely_real"
-        elif ai_score > 0.65:
-            label = "possibly_ai_or_edited"
-        else:
-            label = "uncertain"
-
-        return ImageAnalysisResult(
-            ai_score=ai_score,
-            label=label,
-            nsfw_score=None,
-            manipulation_score=None,
-            details="; ".join(details)
+        # NSFW MODEL
+        nsfw = hf_image_inference(
+            "falconsai/nsfw_image_detection", image_bytes
         )
 
-    # -------------------------
-    # 3) Public: analyze bytes
-    # -------------------------
-    def analyze_bytes(self, data: bytes) -> ImageAnalysisResult:
-        # 1) Try HuggingFace AI first
-        hf_result = self._huggingface_analyze(data)
+        # DETR OBJECT DETECTION
+        detr = hf_image_inference(
+            "facebook/detr-resnet-50", image_bytes
+        )
 
-        if hf_result:
-            ai_score = float(hf_result.get("fake_score", 0.0))
-            nsfw_score = float(hf_result.get("nsfw_score", 0.0))
-            manipulation_score = float(hf_result.get("modification_score", 0.0))
-
-            if ai_score > 0.6:
-                label = "ai_generated_or_deepfake"
-            elif manipulation_score > 0.45:
-                label = "digitally_modified"
-            elif nsfw_score > 0.8:
-                label = "unsafe_content"
-            else:
-                label = "likely_real"
-
-            return ImageAnalysisResult(
-                ai_score=ai_score,
-                label=label,
-                nsfw_score=nsfw_score,
-                manipulation_score=manipulation_score,
-                details="HuggingFace model analysis"
-            )
-
-        # 2) If HF API fails → fallback to heuristic
+        # -----------------------------
+        # Extract NSFW score
+        # -----------------------------
+        nsfw_score = 0.0
         try:
-            img = Image.open(io.BytesIO(data))
-            exif = img.getexif()
-            has_exif = exif is not None and len(exif) > 0
-            return self._heuristic_analyze(img, has_exif)
+            # The NSFW model returns predictions like:
+            # [{"label": "neutral", "score": 0.95}, {"label": "porn", "score": 0.02}, ...]
+            porn_item = next((x for x in nsfw if x["label"] in ["porn", "sexual", "hentai"]), None)
+            if porn_item:
+                nsfw_score = float(porn_item["score"])
+        except:
+            nsfw_score = 0.0
 
-        except Exception as e:
-            return ImageAnalysisResult(
-                ai_score=0.5,
-                label="error_loading_image",
-                details=str(e)
-            )
+        # -----------------------------
+        # Extract DETR confidence
+        # -----------------------------
+        detr_objects = []
+        detr_confidences = []
 
-    # -------------------------
-    # 4) Public: analyze URL
-    # -------------------------
-    def analyze_url(self, url: str) -> ImageAnalysisResult:
+        if isinstance(detr, dict) and "outputs" in detr:
+            preds = detr["outputs"]
+        else:
+            preds = detr  # fallback
+
         try:
-            resp = requests.get(url, timeout=10)
-            resp.raise_for_status()
-            return self.analyze_bytes(resp.content)
-        except Exception as e:
-            return ImageAnalysisResult(
-                ai_score=0.5,
-                label="error_loading_image",
-                details=str(e)
-            )
+            for obj in preds:
+                if "score" in obj and obj["score"] is not None:
+                    conf = float(obj["score"])
+                    label = obj.get("label", "object")
+                    detr_objects.append((label, conf))
+                    detr_confidences.append(conf)
+        except:
+            pass
+
+        # Top 3 objects for details
+        top_objects = sorted(detr_objects, key=lambda x: -x[1])[:3]
+        details = ", ".join([f"{lbl}({conf:.2f})" for lbl, conf in top_objects]) if top_objects else "No objects detected"
+
+        # Average DETR confidence = "realness" of natural photography
+        avg_object_conf = sum(detr_confidences) / len(detr_confidences) if detr_confidences else 0
+
+        # -----------------------------
+        # AI-LIKENESS SCORE (final)
+        # -----------------------------
+        # Formula:
+        #   More NSFW → more likely AI / manipulated
+        #   Lower DETR confidence → less natural → more likely AI
+        #
+        # ai_score = probability image is AI-generated (0 to 1)
+
+        ai_score = (
+            0.60 * nsfw_score +               # NSFW = strong AI indicator
+            0.40 * (1 - avg_object_conf)      # low object confidence = AI-like image
+        )
+
+        ai_score = max(0, min(1, ai_score))
+
+        # -----------------------------
+        # LABEL DECISION
+        # -----------------------------
+        if ai_score < 0.25:
+            label = "likely_real"
+        elif ai_score < 0.55:
+            label = "uncertain"
+        else:
+            label = "possibly_ai_or_edited"
+
+        return {
+            "label": label,
+            "ai_score": ai_score,
+            "details": details,
+            "nsfw_score": nsfw_score,
+            "objects": detr  # full raw model output
+        }
+
+    except Exception as e:
+        return {
+            "label": "error_loading_image",
+            "ai_score": 0.0,
+            "details": str(e)
+        }
