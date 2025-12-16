@@ -5,14 +5,14 @@ import base64
 import os
 import requests
 
-app = FastAPI()
+app = FastAPI(title="TruthShield Backend")
 
 # -----------------------------
 # CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # Allow Chrome extension & any frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,7 +22,7 @@ app.add_middleware(
 # HuggingFace Router API
 # -----------------------------
 HF_API_URL = "https://router.huggingface.co/inference"
-HF_API_KEY = os.getenv("HF_API_KEY")
+HF_API_KEY = os.getenv("HF_API_KEY")   # Optional
 
 
 def make_headers():
@@ -54,7 +54,7 @@ def hf_text_inference(model: str, text: str):
 # IMAGE INFERENCE
 # -----------------------------
 def hf_image_inference(model: str, image_bytes: bytes):
-    img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    img_b64 = base64.b64encode(image_bytes).decode()
 
     payload = {
         "model": model,
@@ -71,7 +71,7 @@ def hf_image_inference(model: str, image_bytes: bytes):
 
 
 # -----------------------------
-# TEXT API ROUTE
+# TEXT ROUTE
 # -----------------------------
 class TextRequest(BaseModel):
     text: str
@@ -102,9 +102,15 @@ async def analyze_image(file: UploadFile = File(...)):
     nsfw = hf_image_inference("falconsai/nsfw_image_detection", image_bytes)
     objects = hf_image_inference("facebook/detr-resnet-50", image_bytes)
 
-    return {"nsfw": nsfw, "objects": objects}
+    return {
+        "nsfw": nsfw,
+        "objects": objects
+    }
 
 
+# -----------------------------
+# ROOT
+# -----------------------------
 @app.get("/")
 def root():
     return {"status": "TruthShield HF Router running"}
